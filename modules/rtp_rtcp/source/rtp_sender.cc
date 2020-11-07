@@ -1041,7 +1041,7 @@ static void CopyHeaderAndExtensionsToRtxPacket(const RtpPacketToSend& packet,
     std::memcpy(destination.begin(), source.begin(), destination.size());
   }
 }
-
+// 通过要发送的原始包来构建RTX包
 std::unique_ptr<RtpPacketToSend> RTPSender::BuildRtxPacket(
     const RtpPacketToSend& packet) {
   std::unique_ptr<RtpPacketToSend> rtx_packet;
@@ -1058,27 +1058,27 @@ std::unique_ptr<RtpPacketToSend> RTPSender::BuildRtxPacket(
     auto kv = rtx_payload_type_map_.find(packet.PayloadType());
     if (kv == rtx_payload_type_map_.end())
       return nullptr;
-
+    // 构造rtx_packet，调用https://github.com/adwpc/webrtc/blob/master/modules/rtp_rtcp/source/rtp_packet.cc#L63
     rtx_packet = std::make_unique<RtpPacketToSend>(&rtp_header_extension_map_,
                                                    max_packet_size_);
-
+    // 设置rtx_packet的PT
     rtx_packet->SetPayloadType(kv->second);
 
-    // Replace sequence number.
+    // Replace sequence number.替换SN为RTX的
     rtx_packet->SetSequenceNumber(sequence_number_rtx_++);
 
-    // Replace SSRC.
+    // Replace SSRC.替换SSRC为RTX的
     rtx_packet->SetSsrc(*ssrc_rtx_);
-
+    // 把原始RTP的头和扩展拷贝到rtx_packet
     CopyHeaderAndExtensionsToRtxPacket(packet, rtx_packet.get());
 
     // RTX packets are sent on an SSRC different from the main media, so the
     // decision to attach MID and/or RRID header extensions is completely
-    // separate from that of the main media SSRC.
-    //
+    // separate from that of the main media SSRC. 
+    // RTX的包使用不同原始流的SSRC，所以MID和RRID都和原始流独立
     // Note that RTX packets must used the RepairedRtpStreamId (RRID) header
     // extension instead of the RtpStreamId (RID) header extension even though
-    // the payload is identical.
+    // the payload is identical.RTX包必须使用RRID的扩展头替换掉RID的
     if (!rtx_ssrc_has_acked_) {
       // These are no-ops if the corresponding header extension is not
       // registered.
@@ -1091,20 +1091,20 @@ std::unique_ptr<RtpPacketToSend> RTPSender::BuildRtxPacket(
     }
   }
   RTC_DCHECK(rtx_packet);
-
+  // 分配空间
   uint8_t* rtx_payload =
       rtx_packet->AllocatePayload(packet.payload_size() + kRtxHeaderSize);
   if (rtx_payload == nullptr)
     return nullptr;
 
-  // Add OSN (original sequence number).
+  // Add OSN (original sequence number).添加OSN（原始流SN）
   ByteWriter<uint16_t>::WriteBigEndian(rtx_payload, packet.SequenceNumber());
 
-  // Add original payload data.
+  // Add original payload data.添加原始PT
   auto payload = packet.payload();
   memcpy(rtx_payload + kRtxHeaderSize, payload.data(), payload.size());
 
-  // Add original application data.
+  // Add original application data.添加原始数据
   rtx_packet->set_application_data(packet.application_data());
 
   // Copy capture time so e.g. TransmissionOffset is correctly set.
