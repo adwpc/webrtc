@@ -66,19 +66,19 @@ RedPacket::RedPacket(size_t length)
     : data_(new uint8_t[length]), length_(length), header_length_(0) {}
 
 RedPacket::~RedPacket() = default;
-
+// 构建RED包RTP头
 void RedPacket::CreateHeader(const uint8_t* rtp_header,
                              size_t header_length,
                              int red_payload_type,
                              int payload_type) {
   RTC_DCHECK_LE(header_length + kRedForFecHeaderLength, length_);
   memcpy(data_.get(), rtp_header, header_length);
-  // Replace payload type.
-  data_[1] &= 0x80;
-  data_[1] += red_payload_type;
+  // Replace payload type.替换为RED的PT
+  data_[1] &= 0x80;// 按位与1000 0000，抹掉后7位
+  data_[1] += red_payload_type;//PT放到后7位
   // Add RED header
-  // f-bit always 0
-  data_[header_length] = static_cast<uint8_t>(payload_type);
+  // f-bit always 0 第一位F为0，参Page4：https://tools.ietf.org/html/rfc2198
+  data_[header_length] = static_cast<uint8_t>(payload_type);//ulpfec的PT放到RTP头后
   header_length_ = header_length + kRedForFecHeaderLength;
 }
 
@@ -132,7 +132,7 @@ void UlpfecGenerator::SetFecParameters(const FecProtectionParams& params) {
     min_num_media_packets_ = 1;
   }
 }
-
+// 添加RTP包并生成ULPFEC
 int UlpfecGenerator::AddRtpPacketAndGenerateFec(
     const rtc::CopyOnWriteBuffer& data_buffer,
     size_t rtp_header_length) {
@@ -141,7 +141,7 @@ int UlpfecGenerator::AddRtpPacketAndGenerateFec(
     params_ = new_params_;
   }
   bool complete_frame = false;
-  const bool marker_bit = (data_buffer[1] & kRtpMarkerBitMask) ? true : false;
+  const bool marker_bit = (data_buffer[1] & kRtpMarkerBitMask) ? true : false;//kRtpMarkerBitMask=0x80 (1000 0000)
   if (media_packets_.size() < kUlpfecMaxMediaPackets) {
     // Our packet masks can only protect up to |kUlpfecMaxMediaPackets| packets.
     std::unique_ptr<ForwardErrorCorrection::Packet> packet(
@@ -213,7 +213,7 @@ std::vector<std::unique_ptr<RedPacket>> UlpfecGenerator::GetUlpfecPacketsAsRed(
     int ulpfec_payload_type,
     uint16_t first_seq_num) {
   std::vector<std::unique_ptr<RedPacket>> red_packets;
-  red_packets.reserve(generated_fec_packets_.size());
+  red_packets.reserve(generated_fec_packets_.size());//增加red向量的容量=ULPFEC的容量
   RTC_DCHECK(!media_packets_.empty());
   ForwardErrorCorrection::Packet* last_media_packet =
       media_packets_.back().get();
@@ -221,10 +221,10 @@ std::vector<std::unique_ptr<RedPacket>> UlpfecGenerator::GetUlpfecPacketsAsRed(
   for (const auto* fec_packet : generated_fec_packets_) {
     // Wrap FEC packet (including FEC headers) in a RED packet. Since the
     // FEC packets in |generated_fec_packets_| don't have RTP headers, we
-    // reuse the header from the last media packet.
+    // reuse the header from the last media packet.封装FEC到RED格式
     RTC_DCHECK_GT(last_media_packet_rtp_header_length_, 0);
     std::unique_ptr<RedPacket> red_packet(
-        new RedPacket(last_media_packet_rtp_header_length_ +
+        new RedPacket(last_media_packet_rtp_header_length_ +//原始RTP包头长+1+FEC长
                       kRedForFecHeaderLength + fec_packet->data.size()));
     red_packet->CreateHeader(last_media_packet->data.data(),
                              last_media_packet_rtp_header_length_,
