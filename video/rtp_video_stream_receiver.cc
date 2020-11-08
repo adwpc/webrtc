@@ -763,15 +763,15 @@ void RtpVideoStreamReceiver::ReceivePacket(const RtpPacketReceived& packet) {
                         rtp_header, video_header, generic_descriptor_wire,
                         packet.recovered());
 }
-
+// 解析处理封装的RTP头
 void RtpVideoStreamReceiver::ParseAndHandleEncapsulatingHeader(
     const RtpPacketReceived& packet) {
   RTC_DCHECK_RUN_ON(&worker_task_checker_);
   if (packet.PayloadType() == config_.rtp.red_payload_type &&
       packet.payload_size() > 0) {
-    if (packet.payload()[0] == config_.rtp.ulpfec_payload_type) {
+    if (packet.payload()[0] == config_.rtp.ulpfec_payload_type) {//判断第一个字节为ULPFEC的PT
       // Notify video_receiver about received FEC packets to avoid NACKing these
-      // packets.
+      // packets.通知video_receiver避免发送NACK
       NotifyReceiverOfEmptyPacket(packet.SequenceNumber());
     }
     if (!ulpfec_receiver_->AddReceivedRedPacket(
