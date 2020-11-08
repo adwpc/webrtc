@@ -94,19 +94,19 @@ bool UlpfecReceiverImpl::AddReceivedRedPacket(const RtpPacket& rtp_packet,
     RTC_LOG(LS_WARNING) << "Corrupt/truncated FEC packet.";
     return false;
   }
-
+  // 把RTP包删除RED头，存储起来
   // Remove RED header of incoming packet and store as a virtual RTP packet.
   auto received_packet =
       std::make_unique<ForwardErrorCorrection::ReceivedPacket>();
   received_packet->pkt = new ForwardErrorCorrection::Packet();
 
   // Get payload type from RED header and sequence number from RTP header.
-  uint8_t payload_type = rtp_packet.payload()[0] & 0x7f;
+  uint8_t payload_type = rtp_packet.payload()[0] & 0x7f;//取RED的PT
   received_packet->is_fec = payload_type == ulpfec_payload_type;
   received_packet->ssrc = rtp_packet.Ssrc();
   received_packet->seq_num = rtp_packet.SequenceNumber();
 
-  if (rtp_packet.payload()[0] & 0x80) {
+  if (rtp_packet.payload()[0] & 0x80) {//取F位，只支持F=0，即1个RED块
     // f bit set in RED header, i.e. there are more than one RED header blocks.
     // WebRTC never generates multiple blocks in a RED packet for FEC.
     RTC_LOG(LS_WARNING) << "More than 1 block in RED packet is not supported.";
@@ -119,23 +119,23 @@ bool UlpfecReceiverImpl::AddReceivedRedPacket(const RtpPacket& rtp_packet,
     packet_counter_.first_packet_time_ms = rtc::TimeMillis();
   }
 
-  if (received_packet->is_fec) {
+  if (received_packet->is_fec) {//如果是FEC包
     ++packet_counter_.num_fec_packets;
-    // everything behind the RED header
+    // everything behind the RED header RED头=1字节，之后为FEC数据，拷贝过来
     received_packet->pkt->data =
         rtp_packet.Buffer().Slice(rtp_packet.headers_size() + kRedHeaderLength,
                                   rtp_packet.payload_size() - kRedHeaderLength);
-  } else {
-    auto red_payload = rtp_packet.payload().subview(kRedHeaderLength);
+  } else {//如果不是FEC包
+    auto red_payload = rtp_packet.payload().subview(kRedHeaderLength);//RED头为1字节，从1字节后为RED的负载
     received_packet->pkt->data.EnsureCapacity(rtp_packet.headers_size() +
-                                              red_payload.size());
-    // Copy RTP header.
+                                              red_payload.size());//RTP头长度+RED负载长度
+    // Copy RTP header.拷贝RTP头
     received_packet->pkt->data.SetData(rtp_packet.data(),
                                        rtp_packet.headers_size());
-    // Set payload type.
+    // Set payload type.设置为RED的PT
     received_packet->pkt->data[1] &= 0x80;          // Reset RED payload type.
     received_packet->pkt->data[1] += payload_type;  // Set media payload type.
-    // Copy payload data.
+    // Copy payload data.拷贝RED的负载
     received_packet->pkt->data.AppendData(red_payload.data(),
                                           red_payload.size());
   }
@@ -163,7 +163,7 @@ int32_t UlpfecReceiverImpl::ProcessReceivedFec() {
 
   for (const auto& received_packet : received_packets) {
     // Send received media packet to VCM.
-    if (!received_packet->is_fec) {
+    if (!received_packet->is_fec) {//如果不是FEC，放到OnRecoveredPacket
       ForwardErrorCorrection::Packet* packet = received_packet->pkt;
       crit_sect_.Leave();
       recovered_packet_callback_->OnRecoveredPacket(packet->data.data(),
@@ -179,13 +179,13 @@ int32_t UlpfecReceiverImpl::ProcessReceivedFec() {
         // Reset buffer reference, so zeroing would work on a buffer with a
         // single reference.
         packet->data = rtc::CopyOnWriteBuffer(0);
-        rtp_packet.ZeroMutableExtensions();
+        rtp_packet.ZeroMutableExtensions();//重置扩展
         packet->data = rtp_packet.Buffer();
         // Ensure that zeroing of extensions was done in place.
         RTC_DCHECK_EQ(packet->data.cdata(), original_data);
       }
     }
-    fec_->DecodeFec(*received_packet, &recovered_packets_);
+    fec_->DecodeFec(*received_packet, &recovered_packets_);//解码FEC
   }
 
   // Send any recovered media packets to VCM.
