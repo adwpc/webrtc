@@ -86,42 +86,42 @@ int NackModule::OnReceivedPacket(uint16_t seq_num,
   //                 statistics to never be updated.
   bool is_retransmitted = true;
 
-  if (!initialized_) {
+  if (!initialized_) {//如果未初始化，初始化newest_seq_num_
     newest_seq_num_ = seq_num;
     if (is_keyframe)
-      keyframe_list_.insert(seq_num);
+      keyframe_list_.insert(seq_num);//如果是关键帧，sn插入keyframe list
     initialized_ = true;
     return 0;
   }
 
   // Since the |newest_seq_num_| is a packet we have actually received we know
-  // that packet has never been Nacked.
+  // that packet has never been Nacked.因为newest_seq_num_从未nack过，返回
   if (seq_num == newest_seq_num_)
     return 0;
-
+  
   if (AheadOf(newest_seq_num_, seq_num)) {
-    // An out of order packet has been received.
+    // An out of order packet has been received.乱序的包到来
     auto nack_list_it = nack_list_.find(seq_num);
     int nacks_sent_for_packet = 0;
-    if (nack_list_it != nack_list_.end()) {
+    if (nack_list_it != nack_list_.end()) {//如果这个包之前已经有记录
       nacks_sent_for_packet = nack_list_it->second.retries;
-      nack_list_.erase(nack_list_it);
+      nack_list_.erase(nack_list_it);//把重新收到的包从nack_list_中移除掉
     }
     if (!is_retransmitted)
       UpdateReorderingStatistics(seq_num);
-    return nacks_sent_for_packet;
+    return nacks_sent_for_packet;//返回这个包的nack发送次数
   }
 
-  // Keep track of new keyframes.
+  // Keep track of new keyframes.如果是关键帧插入关键帧列表
   if (is_keyframe)
     keyframe_list_.insert(seq_num);
 
-  // And remove old ones so we don't accumulate keyframes.
+  // And remove old ones so we don't accumulate keyframes.从关键帧列表删掉旧的sn
   auto it = keyframe_list_.lower_bound(seq_num - kMaxPacketAge);
   if (it != keyframe_list_.begin())
     keyframe_list_.erase(keyframe_list_.begin(), it);
 
-  if (is_recovered) {
+  if (is_recovered) {//是否是rtx包
     recovered_list_.insert(seq_num);
 
     // Remove old ones so we don't accumulate recovered packets.
@@ -132,10 +132,10 @@ int NackModule::OnReceivedPacket(uint16_t seq_num,
     // Do not send nack for packets recovered by FEC or RTX.
     return 0;
   }
-
+  //把从上次插入的sn到当前sn这个区间，插入nack_list_
   AddPacketsToNack(newest_seq_num_ + 1, seq_num);
   newest_seq_num_ = seq_num;
-
+ //从nack_list 中取出需要发送 NACK 的序号列表, 如果某个 seq 请求次数超过 kMaxNackRetries = 10次则会从nack_list 中删除.
   // Are there any nacks that are waiting for this seq_num.
   std::vector<uint16_t> nack_batch = GetNackBatch(kSeqNumOnly);
   if (!nack_batch.empty()) {
@@ -269,7 +269,7 @@ std::vector<uint16_t> NackModule::GetNackBatch(NackFilterOptions options) {
         it->second.sent_at_time == -1 &&
         AheadOrAt(newest_seq_num_, it->second.send_at_seq_num);
     if (delay_timed_out && ((consider_seq_num && nack_on_seq_num_passed) ||
-                            (consider_timestamp && nack_on_rtt_passed))) {
+                            (consider_timestamp && nack_on_rtt_passed))) {//
       nack_batch.emplace_back(it->second.seq_num);
       ++it->second.retries;
       it->second.sent_at_time = now_ms;
